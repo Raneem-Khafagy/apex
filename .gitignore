@@ -1,0 +1,63 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environment (uv) ──────────────────────────────────────────────────
+.venv/
+
+# ── APEX runtime artifacts ────────────────────────────────────────────────────
+# Knowledge base index (built by `just ingest` from ~/Documents/ApexVault)
+apex_vault.hnsw
+apex_vault.hnsw.ids
+apex_vault.meta.json
+
+# DuckDB evaluation store (generated at runtime)
+apex_eval.db
+*.db
+*.wal
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+
+# ── Editor ────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Environment ───────────────────────────────────────────────────────────────
+.envrc
+.env
+
+# ── React SPA (apex-ui/) ─────────────────────────────────────────────────────
+apex-ui/node_modules/
+apex-ui/dist/
+# Build output goes to apex/static/app/ — track .gitkeep but not the build
+apex/static/app/assets/
+apex/static/app/index.html
+
+apex_users.db
+apex_jwt_secret.key
+
+# ── Runtime data / generated artifacts (not shipped) ─────────────────────────
+experiment_corpus/
+experiment_index/
+.phase0_subscribers.json
+apex/inference/lora/        # trained LoRA weights — large, regenerable
+
+# ── Private / internal (kept out of the public repo) ─────────────────────────
+CLAUDE.md
+.claude/
