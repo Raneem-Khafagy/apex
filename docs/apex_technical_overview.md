@@ -539,13 +539,37 @@ All evaluation events are logged to DuckDB (`apex_eval.db`) via `apex/analytics/
 
 | Metric | Formula | Target | Phase |
 |---|---|---|---|
-| **PRP** — Proactive Retrieval Precision | `claimed_prefetches / total_prefetches` | > 0.65 | Phase 0+ |
+| **PRP** — Proactive Retrieval Precision | `claimed_prefetches / total_prefetches` | precision floor ≥ 0.65 | Phase 0+ |
+| **PR-Recall** — coverage of real needs | `claimed_prefetches / total_needed` | reported jointly with PRP | Phase 0+ |
+| **AP** — area under the PR curve | ∫ precision d(recall) over swept τ | single-number summary | Phase 0+ |
 | **LtC** — Latency-to-Context | `t_available − t_claimed` (ms) | Negative mean | Phase 0+ |
+
+**PRP is never reported alone.** Precision in isolation is gameable: a near-silent
+system that fires rarely scores high PRP while missing most real needs. Every PRP number
+is therefore reported with its **recall** counterpart and summarized by **average
+precision (AP)** over a precision–recall curve swept across all τ. The operating threshold
+is selected by fixing a precision floor and reporting the recall achieved at it — the
+inverse of tuning τ to hit a target precision and then reporting that precision.
+
+**Grounded claim signal.** A prefetch is *claimed* iff the top-k it actually retrieved
+contains a chunk from a topically-relevant source document — computed from real retrieval
+output, not from a synthetic rule. The confidence driving the τ decision is a real
+retrieval score, not a fixed constant. See `scripts/bench_prp_grounded.py` (metric code in
+`apex/analytics/eval_metrics.py`).
+
+> **Scope of the grounded benchmark.** It validates the retrieval + firing-threshold
+> (delivery) layer only, using a domain-level source-document relevance proxy (not human
+> hit@k). It does not yet validate intent inference; confidence there is a retrieval score,
+> not a measured intent-classifier accuracy. First result on the Jetson index (50 real
+> MaintNet positives + 35 documented off-corpus controls, top-k=5): AP ≈ 0.81; a
+> precision≥0.65 operating point sits at τ≈0.35 (precision 0.71, recall 0.96, coverage 0.80).
 
 **Claim rate feedback → τ calibration:**
 Every session generates labeled data automatically. `TauCalibrator` reads DuckDB, computes per-bucket claim rates, updates τ. No manual annotation. The feedback loop is the mechanism behind the Claim 1 sub-claim.
 
-**Condition comparison:** Fixed τ = 0.65 vs calibrated τ. Wilcoxon signed-rank test on PRP distributions.
+**Condition comparison:** Fixed τ = 0.65 vs calibrated τ, evaluated on the *swept* PR
+curve so that calibration is judged by the precision/recall it achieves — never by tuning
+τ to the reported precision. Wilcoxon signed-rank test on AP distributions.
 
 ### Claim 2 Metrics — On-Device
 
