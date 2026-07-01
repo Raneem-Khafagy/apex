@@ -282,7 +282,7 @@ async def main() -> None:
     engine = _load_engine()
 
     print("Initializing IntentEngine...")
-    iie = IntentEngine(enable_lora=False)
+    iie = IntentEngine()
 
     # Build vector table for fixed-label baseline
     vector_table = iie._vector_table

@@ -10,7 +10,6 @@ import asyncio
 import os
 import tempfile
 import time
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -23,38 +22,42 @@ from apex.retrieval.rrf import Chunk, RetrievalEngine
 from apex.scheduler.speculative import RetrievalAction, SchedulerDecision, SpeculativeScheduler
 
 
-class MockIntentEngine:
-    """Mock IIE that returns predictable output."""
+# Deterministic seam doubles injected at the PipelineCoordinator's constructor
+# boundaries (intent_engine=, scheduler=, engine=). These are the defined API
+# seams described in ADR-001 ("Interface-boundary stubs"), NOT Ollama mocks — the
+# LLM is never patched. They isolate the multi-subscriber push/format overhead,
+# which is what this test measures, from inference and retrieval variability.
+
+class FixedIntentEngine:
+    """Deterministic IIE seam double — returns a fixed (q̂, c, ℓ) triple."""
 
     async def infer(self, signal: SignalVector):
-        """Return mock intent triple."""
         import numpy as np
-        q_hat = np.random.random(384).astype(np.float32)  # all-MiniLM dimension
+        q_hat = np.ones(384, dtype=np.float32) / np.sqrt(384)  # fixed unit vector (all-MiniLM dim)
         c = 0.85
         label = signal.activity_type
         return q_hat, c, label
 
 
-class MockScheduler:
-    """Mock scheduler that always decides to RETRIEVE."""
+class AlwaysRetrieveScheduler:
+    """Scheduler seam double that always decides to RETRIEVE."""
 
     def decide(self, q_hat, c, label, urgency_flag=False, buffer_hit=False):
         return SchedulerDecision(
             action=RetrievalAction.RETRIEVE,
             tau_used=0.65,
-            reason="Mock scheduler - always retrieve"
+            reason="test seam - always retrieve"
         )
 
 
-class MockRetrievalEngine:
-    """Mock retrieval engine that returns consistent chunks."""
+class StaticRetrievalEngine:
+    """Retrieval seam double that returns a fixed set of chunks."""
 
     def search(self, q_hat, label=None, k=5):
-        """Return mock chunks."""
         return [
             Chunk(
                 chunk_id=f"{label}_chunk_{i}",
-                text=f"Mock content for {label} domain",
+                text=f"Static content for {label} domain",
                 source=f"docs/{label}_guide.md",
                 label=label,
                 score=0.9 - (i * 0.1)
@@ -71,10 +74,10 @@ async def test_single_subscriber_uses_normal_processing():
         store = AnalyticsStore(db_path)
         buffer = ContextBuffer()
         coordinator = PipelineCoordinator(
-            retrieval_engine=MockRetrievalEngine(),
+            retrieval_engine=StaticRetrievalEngine(),
             buffer=buffer,
-            intent_engine=MockIntentEngine(),
-            scheduler=MockScheduler(),
+            intent_engine=FixedIntentEngine(),
+            scheduler=AlwaysRetrieveScheduler(),
             store=store,
             subscriber_ids=["test_subscriber"],
             retrieval_k=3
@@ -112,23 +115,23 @@ async def test_multi_subscriber_overhead_measurement():
         store = AnalyticsStore(db_path)
         buffer = ContextBuffer()
 
-        # Mock push callback that simulates different delivery times
+        # Push callback that records different simulated delivery times
         push_delays = {"subscriber_1": 0.01, "subscriber_2": 0.02, "subscriber_3": 0.03}
 
-        async def mock_push_callback(subscriber_id: str) -> bool:
+        async def recording_push_callback(subscriber_id: str) -> bool:
             """Simulate variable push delivery times."""
             await asyncio.sleep(push_delays[subscriber_id])
             return True  # Always successful delivery
 
         coordinator = PipelineCoordinator(
-            retrieval_engine=MockRetrievalEngine(),
+            retrieval_engine=StaticRetrievalEngine(),
             buffer=buffer,
-            intent_engine=MockIntentEngine(),
-            scheduler=MockScheduler(),
+            intent_engine=FixedIntentEngine(),
+            scheduler=AlwaysRetrieveScheduler(),
             store=store,
             subscriber_ids=["subscriber_1", "subscriber_2", "subscriber_3"],
             retrieval_k=3,
-            push_callback=mock_push_callback
+            push_callback=recording_push_callback
         )
 
         signal = SignalVector(
@@ -161,7 +164,7 @@ async def test_multi_subscriber_overhead_measurement():
             assert sub_count == 3
             assert overhead_ms is not None
             assert overhead_ms > 0  # Should have measurable overhead
-            assert claimed is True  # Mock push callback always succeeds
+            assert claimed is True  # push callback always succeeds
 
         # Overhead should include the maximum delay plus processing time
         # The measured overhead is max(t_push_N) - t_retrieval_complete
@@ -185,7 +188,7 @@ async def test_multi_subscriber_shared_retrieval():
         # Track retrieval calls
         retrieval_calls = []
 
-        class TrackingRetrievalEngine(MockRetrievalEngine):
+        class TrackingRetrievalEngine(StaticRetrievalEngine):
             def search(self, q_hat, label=None, k=5):
                 retrieval_calls.append((label, k))
                 return super().search(q_hat, label, k)
@@ -193,8 +196,8 @@ async def test_multi_subscriber_shared_retrieval():
         coordinator = PipelineCoordinator(
             retrieval_engine=TrackingRetrievalEngine(),
             buffer=buffer,
-            intent_engine=MockIntentEngine(),
-            scheduler=MockScheduler(),
+            intent_engine=FixedIntentEngine(),
+            scheduler=AlwaysRetrieveScheduler(),
             store=store,
             subscriber_ids=["sub_1", "sub_2", "sub_3"],
             retrieval_k=5
@@ -241,7 +244,7 @@ async def test_overhead_scaling_analysis():
         store = AnalyticsStore(db_path)
         session_id = "test_session"
 
-        # Insert mock data for different subscriber counts
+        # Insert fixed data for different subscriber counts
         # Single subscriber (baseline)
         store.log_prefetch(
             session_id=session_id,

@@ -142,8 +142,8 @@ _READING_BLOCKS = [
 ## Notes — ProactiveBench (Wang et al., ICLR 2025)
 
 Key finding: fine-tuned smaller models outperform frontier models on proactive
-tasks when given domain-specific training signal.  Directly supports the LoRA
-adapter approach for APEX domain transfer.
+tasks when given domain-specific training signal.  Motivates on-device
+domain adaptation for APEX.
 """,
     """
 ## Notes — ContextAgent (NeurIPS 2025)

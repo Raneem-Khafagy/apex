@@ -620,7 +620,6 @@ curve so that calibration is judged by the precision/recall it achieves — neve
 | `AnalyticsStore` | `apex/analytics/store.py` | ✅ Complete |
 | `MCP Server` | `apex/server.py` | ✅ Complete |
 | Runtime daemon | `main.py` | ✅ Complete |
-| LoRA adapters | `apex/inference/lora/` | ⚠️ Infrastructure complete, adapters in training |
 
 **Test suite:** 312 tests passing. No mocks — all tests run against real Ollama and real pipeline components.
 

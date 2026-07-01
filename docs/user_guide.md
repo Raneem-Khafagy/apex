@@ -49,7 +49,7 @@ APEX_VAULT_PATH=experiment_corpus \
 APEX_INDEX_PATH=experiment_index/experiment \
 just dev
 ```
-The daemon starts FastAPI on port 8765, launches the Behavioral Signal Monitor, loads LoRA domain adapters (if available), and starts the per-domain τ calibrator.
+The daemon starts FastAPI on port 8765, launches the Behavioral Signal Monitor, and starts the per-domain τ calibrator.
 
 If no index exists yet, run this first (one-time):
 ```bash
@@ -145,70 +145,13 @@ Press **Cmd+Shift+R** to reveal a 28px bottom strip showing live:
 - **DPS** — Delivery Precision per Subscriber. Measured via human annotation post-session
 - **τ** — current threshold; calibrates per-domain over time as APEX learns your patterns
 - **Buffer** — chunks currently queued for your subscriber
-- **Domains** — LoRA adapters available (productivity, factory, research)
-
----
-
-## LoRA Domain Adapters (Advanced Feature)
-
-APEX supports domain-specific LoRA (Low-Rank Adaptation) adapters that fine-tune the Intent Inference Engine for different domains without retraining the base model. Each domain can have specialized behavior while sharing the universal base weights.
-
-### Available Domains with LoRA Support
-
-- **productivity**: Personal productivity (coding, writing, debugging)
-- **factory**: Smart factory / industrial IoT
-- **research**: Research and academic analysis
-
-### Creating Mock Adapters (Development)
-
-```bash
-# Create all domain adapters
-python -m apex.inference.lora.create_mock_adapters
-
-# Create specific domain
-python -m apex.inference.lora.create_mock_adapters --domain productivity
-
-# List available domains
-python -m apex.inference.lora.create_mock_adapters --list-domains
-
-# Check what adapters are loaded
-uv run python -c "from apex.inference.intent_engine import IntentEngine; print(IntentEngine().list_available_domains())"
-```
-
-### Domain → Label Mapping
-
-The Intent Inference Engine automatically maps task context labels to domains:
-
-- **productivity**: `debugging_python`, `writing_document`, `coding_javascript`, `api_testing`
-- **factory**: `factory_anomaly`, `sensor_monitoring`, `maintenance_alert`, `production_line`
-- **research**: `research_paper`, `reading_reference`, `academic_analysis`, `literature_review`
-
-Labels are extracted from behavioral signals and mapped heuristically. Domain-specific τ thresholds are calibrated independently per domain.
-
-### File Structure
-
-LoRA adapter files are stored in `apex/inference/lora/`:
-```
-apex/inference/lora/
-├── lora_productivity.bin      # PyTorch format
-├── lora_factory.safetensors   # HuggingFace format
-├── lora_research.bin
-└── create_mock_adapters.py    # Development utility
-```
-
-### Integration with Intent Engine
-
-When a behavioral signal is processed:
-1. **Heuristic Gate**: Fast pattern matching (no LoRA applied)
-2. **LLM Path**: Label generated → domain extracted → LoRA adapter applied to intent vector
-3. **Retrieval**: Domain-adapted vector used for semantic search
-4. **Scheduler**: Domain-specific τ threshold applied
+- **Domains** — active signal-adapter domains (productivity, factory, research)
 
 ---
 
 ## Domain-by-Domain: What to Do and What to Expect
 
-Your domain shapes the visual theme, default interaction style, LLM adapter prompt, and LoRA adaptation behavior — but it does not restrict the system. Any string works.
+Your domain shapes the visual theme, default interaction style, and LLM adapter prompt — but it does not restrict the system. Any string works.
 
 ---
 
@@ -397,7 +340,6 @@ just metrics
 | Daemon is slow to respond | Ollama / phi3.5 cold start | First request after start takes 5–30s while models load into memory |
 | `DPS = (no data)` in metrics | No delivery events annotated | Run `just annotate-dps` after eval session to score delivery quality |
 | Metrics show "No data in fixed DB" | eval-fixed not run yet | Run `just eval-fixed` before `just compare-tau` |
-| LoRA adapters not loading | Missing adapter files | Run `python -m apex.inference.lora.create_mock_adapters` |
 | τ not calibrating per domain | Fixed τ mode enabled | Remove `--fixed-tau` flag or unset `APEX_TAU_FIXED` env var |
 
 ---
@@ -437,10 +379,6 @@ just stop && just metrics  # Shows IIE, retrieval, push timing breakdown
 just register && just eval  # Multi-subscriber overhead measured automatically
 just stop && just annotate-dps  # Interactive quality scoring
 just metrics  # Final results with DPS
-
-# LoRA domain adapters (development)
-python -m apex.inference.lora.create_mock_adapters
-uv run python -c "from apex.inference.intent_engine import IntentEngine; print(IntentEngine().list_available_domains())"
 
 # Live metrics in browser
 # Cmd+Shift+R

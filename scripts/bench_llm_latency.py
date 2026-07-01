@@ -115,7 +115,7 @@ async def _bench_llm_path(engine: IntentEngine) -> tuple[list[float], list[float
 
 async def main() -> None:
     print("Initializing IntentEngine (building vector table, warming up Ollama)...")
-    engine = IntentEngine(enable_lora=False)
+    engine = IntentEngine()
 
     print(f"\nRunning {N_WARMUP} warm-up + {N_TRIALS} timed LLM path trials...")
     chat_times, full_times = await _bench_llm_path(engine)

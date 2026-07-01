@@ -102,54 +102,39 @@ class DPSAnnotator:
 
     def reconstruct_delivered_content(self, event: dict) -> Optional[str]:
         """
-        Reconstruct what would have been delivered for this push event.
+        Reconstruct what was delivered for this push event by re-running the
+        real retrieval engine for the event's label and formatting the result
+        as it would have been delivered.
 
-        Since the original chunks aren't stored, we simulate the retrieval
-        and formatting process based on the event metadata.
+        Returns None (event skipped) if the retrieval index is unavailable or
+        returns nothing. Annotation must score real delivered content — this
+        tool never fabricates placeholder text for a human to grade.
         """
         if not self.retrieval_engine:
-            # Create mock content when index is unavailable
-            return self._create_mock_content(event)
+            print(f"⚠️  Skipping event {event['id']}: no retrieval index loaded — "
+                  "cannot reconstruct real delivered content for annotation")
+            return None
 
         try:
-            # TODO: Reconstruct the intent vector that would have been used
-            # For now, create representative content based on label
-            chunks = self._get_representative_chunks(event["label"])
-
-            # Get subscriber profile (mock for annotation)
-            profile = self._get_mock_subscriber_profile(event["subscriber_id"])
-
-            # Format content as it would have been delivered
-            formatted_content = self.llm_adapter.format(chunks, profile)
-
-            return formatted_content
-
+            chunks = self._retrieve_for_label(event["label"])
+            if not chunks:
+                print(f"⚠️  Skipping event {event['id']}: retrieval returned no chunks")
+                return None
+            profile = self._default_annotation_profile(event["subscriber_id"])
+            return self.llm_adapter.format(chunks, profile)
         except Exception as e:
             print(f"⚠️  Failed to reconstruct content for event {event['id']}: {e}")
-            return self._create_mock_content(event)
+            return None
 
-    def _get_representative_chunks(self, label: str) -> list:
-        """Get representative chunks for the given label."""
-        # Mock implementation - in a full implementation this would
-        # perform retrieval based on the stored label
-        from apex.retrieval.rrf import Chunk
+    def _retrieve_for_label(self, label: str) -> list:
+        """Run real hybrid retrieval for the given label (embed label → search)."""
+        from apex.inference.intent_engine import _embed
 
-        mock_chunks = [
-            Chunk(
-                chunk_id=f"{label}_chunk_1",
-                text=f"Representative content for {label} domain. "
-                     f"This would normally be retrieved based on the behavioral signal. "
-                     f"Multiple chunks would be ranked by relevance.",
-                source=f"docs/{label}_guide.md",
-                label=label,
-                score=0.85
-            )
-        ]
+        q_hat = _embed(label)
+        return self.retrieval_engine.search(q_hat, label=label, k=5)
 
-        return mock_chunks
-
-    def _get_mock_subscriber_profile(self, subscriber_id: str):
-        """Create a mock ConsumerProfile for formatting."""
+    def _default_annotation_profile(self, subscriber_id: str):
+        """Build a default ConsumerProfile for formatting during annotation."""
         from apex.adapter.llm_adapter import ConsumerProfile
 
         # Create profile based on common subscriber patterns
@@ -190,27 +175,6 @@ class DPSAnnotator:
                 citation_style="footnote",
                 max_context_tokens=1024
             )
-
-    def _create_mock_content(self, event: dict) -> str:
-        """Create mock delivered content when retrieval engine is unavailable."""
-        return f"""
-[MOCK DELIVERED CONTENT for Event {event['id']}]
-
-Domain: {event['label']}
-Subscriber: {event['subscriber_id']}
-Confidence: {event['confidence']:.3f}
-
-This represents the context that would have been delivered to the subscriber
-based on the behavioral signal. The actual content would be:
-
-1. Retrieved chunks relevant to the {event['label']} domain
-2. Formatted according to the subscriber's profile
-3. Delivered via WebSocket push
-
-For annotation purposes, consider whether this type of content would be:
-- Relevant to a user working in the {event['label']} domain
-- Properly formatted for the {event['subscriber_id']} interface
-""".strip()
 
     def get_annotation_scores(self, event: dict, content: str) -> tuple[float, float]:
         """
