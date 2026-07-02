@@ -6,7 +6,13 @@ Compares APEX against two baselines using the same hybrid retrieval engine:
   (A) LLM-only: skip gate, every signal goes to Phi-3.5 for classification
   (B) Fixed-label: activity_type → fixed pre-computed vector, no LLM, no confidence
 
-Metrics measured: p50 latency, gate%, and PRP from a short synthetic eval session.
+Metrics measured: p50/p95 latency and gate% over a short eval session.
+
+NOTE: This script does NOT report PRP. Proactive Retrieval Precision is measured
+separately by scripts/bench_prp_grounded.py, which grounds the "claim" signal in
+real retrieval against relevance labels and reports a precision–recall curve.
+Earlier revisions of this script simulated claims with a fixed per-index rule; that
+fabricated signal has been removed — latency and gate% here are real measurements.
 Requires ollama serve + phi3.5 + all-minilm.
 
 Output: JSON written to ict_express/results/baselines.json
@@ -143,14 +149,10 @@ async def _run_baseline_a_llm_only(
                     t_signal=t0, t_iie=t1, t_retrieval=t1,
                 )
                 retrieval_count += 1
-                # Simulate claim (50% claim rate for baseline)
-                if i % 2 == 0:
-                    store.log_claim(event_id)
 
         if (i + 1) % 10 == 0:
             print(f"    LLM-only: {i+1}/{N_SIGNALS} signals processed")
 
-    prp = store.compute_prp(session_id)
     lat = sorted(latencies_ms)
     n = len(lat)
 
@@ -160,7 +162,6 @@ async def _run_baseline_a_llm_only(
         "gate_pct": 0.0,
         "p50_ms": round(lat[n // 2], 1),
         "p95_ms": round(lat[min(int(0.95 * n), n - 1)], 1),
-        "prp_pct": round(prp * 100, 1) if prp is not None else None,
         "retrieval_count": retrieval_count,
     }
 
@@ -196,11 +197,7 @@ async def _run_baseline_b_fixed_label(
                     t_signal=t0, t_iie=t1, t_retrieval=t1,
                 )
                 retrieval_count += 1
-                # Fixed-label has lower claim rate for novel signals
-                if sig.activity_type in ("writing", "debugging", "reading") and i % 3 != 0:
-                    store.log_claim(event_id)
 
-    prp = store.compute_prp(session_id)
     lat = sorted(latencies_ms)
     n = len(lat)
 
@@ -210,7 +207,6 @@ async def _run_baseline_b_fixed_label(
         "gate_pct": 100.0,
         "p50_ms": round(lat[n // 2], 6),
         "p95_ms": round(lat[min(int(0.95 * n), n - 1)], 6),
-        "prp_pct": round(prp * 100, 1) if prp is not None else None,
         "retrieval_count": retrieval_count,
     }
 
@@ -254,14 +250,10 @@ async def _run_apex(
                     t_signal=t0, t_iie=t1, t_retrieval=t1,
                 )
                 retrieval_count += 1
-                # APEX has higher claim rate due to better precision
-                if i % 3 != 2:
-                    store.log_claim(event_id)
 
         if (i + 1) % 10 == 0:
             print(f"    APEX: {i+1}/{N_SIGNALS} signals processed")
 
-    prp = store.compute_prp(session_id)
     lat = sorted(latencies_ms)
     n = len(lat)
     gate_pct = round(gate_hits / N_SIGNALS * 100, 1)
@@ -272,7 +264,6 @@ async def _run_apex(
         "gate_pct": gate_pct,
         "p50_ms": round(lat[n // 2], 4),
         "p95_ms": round(lat[min(int(0.95 * n), n - 1)], 4),
-        "prp_pct": round(prp * 100, 1) if prp is not None else None,
         "retrieval_count": retrieval_count,
     }
 
@@ -304,12 +295,11 @@ async def main() -> None:
     }
 
     print("\n\nBaseline Comparison Results:")
-    print(f"{'Method':<22}  {'p50':>8}  {'gate%':>8}  {'PRP':>8}")
-    print(f"{'-'*22}  {'-'*8}  {'-'*8}  {'-'*8}")
+    print(f"{'Method':<22}  {'p50':>8}  {'gate%':>8}")
+    print(f"{'-'*22}  {'-'*8}  {'-'*8}")
     for r in [result_b, result_a, result_apex]:
         p50 = f"{r['p50_ms']:.4f}ms" if r["p50_ms"] < 1 else f"{r['p50_ms']:.1f}ms"
-        prp = f"{r['prp_pct']:.1f}%" if r["prp_pct"] is not None else "---"
-        print(f"  {r['method']:<20}  {p50:>8}  {r['gate_pct']:>7.1f}%  {prp:>8}")
+        print(f"  {r['method']:<20}  {p50:>8}  {r['gate_pct']:>7.1f}%")
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
     out_path = os.path.join(RESULTS_DIR, "baselines.json")
